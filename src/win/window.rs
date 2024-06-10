@@ -25,6 +25,7 @@ use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
@@ -41,11 +42,12 @@ use crate::{
 use super::cursor::cursor_to_lpcwstr;
 use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
+use super::message_window::{self, MessageWindow};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
 
-unsafe fn generate_guid() -> String {
+pub(crate) unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
     CoCreateGuid(&mut guid);
     format!(
@@ -700,6 +702,8 @@ impl Window<'_> {
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
 
+            let message_window = Arc::new(MessageWindow::new(hwnd));
+
             let window_state = Rc::new(WindowState {
                 hwnd,
                 window_class,
@@ -709,6 +713,9 @@ impl Window<'_> {
                 mouse_button_counter: Cell::new(0),
                 mouse_was_outside_window: RefCell::new(true),
                 cursor_icon: Cell::new(MouseCursor::Default),
+
+                message_window: message_window.clone(),
+
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
@@ -720,6 +727,11 @@ impl Window<'_> {
 
                 #[cfg(feature = "opengl")]
                 gl_context,
+            });
+
+            std::thread::spawn(move || {
+                let message_window = message_window.clone();
+                message_window.run()
             });
 
             let handler = {
@@ -802,9 +814,7 @@ impl Window<'_> {
     }
 
     pub fn focus(&mut self) {
-        unsafe {
-            SetFocus(self.state.hwnd);
-        }
+        self.state.message_window.set_focus(true);
     }
 
     pub fn resize(&mut self, size: Size) {
