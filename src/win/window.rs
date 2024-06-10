@@ -507,6 +507,8 @@ pub(super) struct WindowState {
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
+    message_window: Arc<MessageWindow>,
+
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
     /// handler requests a resize in response to a keyboard event, the window state will already be
